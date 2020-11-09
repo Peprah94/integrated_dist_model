@@ -1,0 +1,105 @@
+---
+title: "IDM_project"
+author: "Kwaku"
+date: "11/7/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(nimble)
+library(coda)
+library(mcmcplots)
+library(MCMCglmm)
+```
+
+The following are used for the simulation:
+We assume n.genus  $g = 1,2,...,n.genus$.
+* For each g genera, we assume n.species in that geunus
+* We assume the data was collected at n.sites
+* We also assume the total number of visits to each site is n.visit.
+* We also assume that some of the data are collected with species ID
+* Most of them are collected with genus ID
+* shan.index is the shannon's index
+* p.tag is the detectiion probability for the occurence model (species data)
+* includecov (T/F) indicates whether it is a model with a covariate (TRUE) or no covariate (FALSE)
+
+
+```{r include=FALSE}
+source("sim_rep.R") #simulation of data
+source('nimble.R') #code for the nimble
+source('estimation.R') #parametrisation for the NIMBLE
+source('shanestimate.R') #Function that estimates the shannon index from the MCMC
+```
+
+# Simulating the data
+```{r}
+set.seed(2020)
+includecov= FALSE 
+#includecov=TRUE means that there is covariate effect and false otherwise
+n.sites=20
+n.species = 5
+n.visit=3
+covte = covariates(n.sites)
+data = sim(n.sites, n.species,n.visit,n.sites ,n.sites, cov=covte, includecov) #covte is the covariates
+summary(data)
+```
+
+# Original Parameters
+$$
+\begin{split}
+\sigma^2_{\alpha} &= 0.4^2\\
+\sigma^2_{species} &=\sigma^2_{\gamma} =2\\
+\sigma^2_{site} &= \sigma^2_{\beta}=1\\
+p.tag &= 0.7
+\end{split}
+$$
+
+
+# Running the model
+```{r}
+mcmc.out <- est(data, code)
+```
+
+#Diagnostics of the model
+```{r}
+ coda_samples <- mcmc(mcmc.out$mcmc.out$samples)
+#mcmcplot(coda_samples)
+```
+
+# Parameter Estimation
+
+* Mean bias of shannon index
+
+* MSE of shannon index
+
+* Estimate of $\sigma_{\alpha}$, $\sigma_{\beta}$, $\sigma_{\gamma}$ and $p.tag$
+
+```{r}
+true_shan <- data$shan.index #true estimates of shannon index from the simulation
+if(includecov==TRUE){
+  est_beta <- matrix(mcmc.out$mode.out[1:(n.species*3)],
+                     nrow=n.species, ncol=3) #estimates of beta from mcmc
+  est_shan = shanest(est_beta,data$covariates, TRUE) #estimation of shannon index
+  mse_shan = sum(((true_shan-est_shan)^2)/n.sites) #MSE of shannon index
+  mbias_shan = mean(true_shan-est_shan) #mean bias of shannon index
+   p_est <- mcmc.out$mode.out[(n.species*3)+1] #detection probability
+   sig_alpha <- NA
+   sig_beta <- NA
+   sig_gamma <- NA
+  }else{
+    est_shan <- mcmc.out$mode.out[2:(n.sites+1)] #estimates of shannon index
+    mse_shan = sum(((true_shan-est_shan)^2)/n.sites) #MSE of shannon index
+    mbias_shan = mean(true_shan-est_shan)#mean bias of shannon index
+  p_est <- mcmc.out$mode.out[1] #detection probability
+  sig_alpha <- tail(mcmc.out$mode.out,3)[1] #variance of intercept
+  sig_beta <- tail(mcmc.out$mode.out,3)[2] #variance of site effect
+  sig_gamma <- tail(mcmc.out$mode.out,3)[3] #variance of species effect
+  }
+
+data = data.frame(p_est, mse_shan, mbias_shan, sig_alpha, sig_beta, sig_gamma)
+print(data)
+```
+
